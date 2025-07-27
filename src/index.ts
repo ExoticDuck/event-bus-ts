@@ -64,28 +64,63 @@ type Bus<EventTypes> = {
 export function createEventBus<EventTypes>(): EventBus<EventTypes> {
   const bus: Bus<EventTypes> = { "*": [] } as Bus<EventTypes>;
 
+  // сигнатура перегрузки для всех событий кроме "*"
+  function on<K extends keyof EventTypes>(
+    eventName: K,
+    handler: EventHandler<EventTypes[K]>
+  ): () => void;
+  // сигнатура перегрузки для WildCard события
+  function on<K extends keyof EventTypes>(
+    eventName: "*",
+    handler: WildCardEventHandler<K>
+  ): () => void;
   function on<K extends keyof EventTypes>(
     eventName: K | "*",
-    handler: EventHandler<EventTypes[K]>
-  ) {
-    if (!bus[eventName]) {
-      bus[eventName as keyof EventTypes] = [] as unknown as Bus<EventTypes>[K];
+    handler: any
+  ): () => void {
+    if (eventName === "*") {
+      (bus["*"] as WildCardEventHandler<K>[]).push(
+        handler as WildCardEventHandler<K>
+      );
+    } else {
+      if (!bus[eventName]) {
+        bus[eventName as keyof EventTypes] =
+          [] as unknown as Bus<EventTypes>[K];
+      }
+      (bus[eventName] as EventHandler<EventTypes[K]>[]).push(
+        handler as EventHandler<EventTypes[K]>
+      );
     }
-    (bus[eventName] as EventHandler<EventTypes[K]>[]).push(handler);
-    //возврат функции отписки
+    // возврат функции отписки
     return () => clear(eventName);
   }
 
   function once<K extends keyof EventTypes>(
-    eventName: K | "*",
+    eventName: K,
     handler: EventHandler<EventTypes[K]>
-  ) {
-    const helper: EventHandler<EventTypes[K]> = (payload) => {
-      handler(payload);
-      clear(eventName);
-    };
-    on(eventName, helper);
-    //возврат функции отписки
+  ): () => void;
+  function once<K extends keyof EventTypes>(
+    eventName: "*",
+    handler: WildCardEventHandler<K>
+  ): () => void;
+  function once<K extends keyof EventTypes>(
+    eventName: K | "*",
+    handler: any
+  ): () => void {
+    if (eventName === "*") {
+      const helper: WildCardEventHandler<K> = (payload) => {
+        handler(payload);
+        clear(eventName);
+      };
+      on(eventName, helper);
+    } else {
+      const helper: EventHandler<EventTypes[K]> = (payload) => {
+        handler(payload);
+        clear(eventName);
+      };
+      on(eventName, helper);
+    }
+    // возврат функции отписки
     return () => clear(eventName);
   }
 

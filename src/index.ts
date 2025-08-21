@@ -1,25 +1,3 @@
-//** API
-//? 1. createEventBus() - создание нового EventBus
-// Возвращает объект с функциями: { on, once, emit, clear }
-// Использует замыкание для хранения состояния
-// Каждый вызов создает изолированный экземпляр
-//? 2. on(eventName, handler) - подписка на событие
-// Возвращает функцию отписки () => void
-//? 3. once(eventName, handler) - подписка на событие с автоматической отпиской
-// после первого вызова
-// Handler должен вызваться только один раз
-// Возвращает функцию отписки () => void
-//? 4. emit(eventName, payload) - генерация события
-// Передает один payload в handlers
-// Ничего не возвращает
-//? 5. clear(eventName?) - удаление всех слушателей
-// Если eventName не указан - удаляет все события
-// Ничего не возвращает
-// Специальные требования
-//? 1. Wildcard события
-// Поддержка события * которое срабатывает на любой emit
-// Handler получает объект: { eventName: string, payload: unknown }
-
 type EventHandler<P> = (payload: P) => void;
 
 type WildCardEventHandler<K, P> = (payload: {
@@ -28,34 +6,46 @@ type WildCardEventHandler<K, P> = (payload: {
 }) => void;
 
 type EventBus<EventTypes> = {
-  on<K extends keyof EventTypes>(
+  on<K extends keyof EventTypes & string>(
     eventName: K,
     handler: EventHandler<EventTypes[K]>
   ): () => void;
-  on<K extends keyof EventTypes>(
+  on<K extends keyof EventTypes & string>(
     eventName: "*",
-    handler: WildCardEventHandler<K, EventTypes[K]>
+    handler: WildCardEventHandler<K & string, EventTypes[K]>
   ): () => void;
-  once<K extends keyof EventTypes>(
+  once<K extends keyof EventTypes & string>(
     eventName: K,
     handler: EventHandler<EventTypes[K]>
   ): () => void;
-  once<K extends keyof EventTypes>(
+  once<K extends keyof EventTypes & string>(
     eventName: "*",
-    handler: WildCardEventHandler<K, EventTypes[K]>
+    handler: WildCardEventHandler<K & string, EventTypes[K]>
   ): () => void;
-  emit<K extends keyof EventTypes>(eventName: K, payload: EventTypes[K]): void;
+  emit<K extends keyof EventTypes & string>(
+    eventName: K,
+    payload: EventTypes[K]
+  ): void;
   clear: (eventName?: keyof EventTypes) => void;
 };
 
-type Bus<EventTypes> = {
-  [K in keyof EventTypes]?: EventHandler<EventTypes[K]>[];
-} & {
-  "*": ((payload: { eventName: keyof EventTypes; payload: unknown }) => void)[];
+type EventMap<EventTypes extends Record<string, unknown>> = {
+  [K in keyof EventTypes]: EventHandler<EventTypes[K]>[];
 };
 
-export default function createEventBus<EventTypes>(): EventBus<EventTypes> {
-  const bus: Bus<EventTypes> = { "*": [] } as Bus<EventTypes>;
+type WildCardHandlerMap<EventTypes extends Record<string, unknown>> = {
+  "*": WildCardEventHandler<keyof EventTypes, EventTypes[keyof EventTypes]>[];
+};
+
+type Bus<EventTypes extends Record<string, unknown>> = EventMap<EventTypes> &
+  WildCardHandlerMap<EventTypes>;
+
+export default function createEventBus<
+  EventTypes extends Record<string, unknown>
+>(): EventBus<EventTypes> {
+  const bus = {
+    "*": [],
+  } as Bus<EventTypes>;
 
   // сигнатура перегрузки для всех событий кроме "*"
   function on<K extends keyof EventTypes>(
@@ -65,33 +55,29 @@ export default function createEventBus<EventTypes>(): EventBus<EventTypes> {
   // сигнатура перегрузки для WildCard события
   function on<K extends keyof EventTypes>(
     eventName: "*",
-    handler: WildCardEventHandler<K, EventTypes[K]>
+    handler: WildCardEventHandler<K & string, EventTypes[K]>
   ): () => void;
-  function on<K extends keyof EventTypes>(
-    eventName: K | "*",
-    handler: any
-  ): () => void {
+  function on(eventName: keyof EventTypes | "*", handler: any): () => void {
     if (eventName === "*") {
-      (bus["*"] as WildCardEventHandler<K, EventTypes[K]>[]).push(
-        handler as WildCardEventHandler<K, EventTypes[K]>
-      );
+      bus["*"].push(handler);
     } else {
-      if (!bus[eventName]) {
-        bus[eventName as keyof EventTypes] =
-          [] as unknown as Bus<EventTypes>[K];
+      const handlers = bus[eventName];
+      if (!handlers) {
+        bus[eventName] = [handler] as Bus<EventTypes>[keyof EventTypes];
+      } else {
+        handlers.push(handler);
       }
-      (bus[eventName] as EventHandler<EventTypes[K]>[]).push(
-        handler as EventHandler<EventTypes[K]>
-      );
     }
-    // возврат функции отписки
     return () => {
-      if (bus[eventName as keyof EventTypes]?.includes(handler)) {
-        bus[eventName as keyof EventTypes] = bus[
-          eventName as keyof EventTypes
-        ]?.filter(
-          (savedHandler) => savedHandler !== handler
-        ) as unknown as Bus<EventTypes>[keyof EventTypes];
+      if (eventName === "*") {
+        bus["*"] = bus["*"].filter((savedHandler) => savedHandler !== handler);
+      } else {
+        const handlers = bus[eventName];
+        if (handlers) {
+          bus[eventName] = handlers.filter(
+            (savedHandler) => savedHandler !== handler
+          ) as Bus<EventTypes>[keyof EventTypes];
+        }
       }
     };
   }
@@ -102,35 +88,28 @@ export default function createEventBus<EventTypes>(): EventBus<EventTypes> {
   ): () => void;
   function once<K extends keyof EventTypes>(
     eventName: "*",
-    handler: WildCardEventHandler<K, EventTypes[K]>
+    handler: WildCardEventHandler<K & string, EventTypes[K]>
   ): () => void;
   function once<K extends keyof EventTypes>(
     eventName: K | "*",
     handler: any
   ): () => void {
+    let unsubscribe: () => void;
     if (eventName === "*") {
       const helper: WildCardEventHandler<K, EventTypes[K]> = (payload) => {
         handler(payload);
         clear(eventName);
       };
-      on(eventName, helper);
+      unsubscribe = on(eventName, helper);
     } else {
       const helper: EventHandler<EventTypes[K]> = (payload) => {
         handler(payload);
         clear(eventName);
       };
-      on(eventName, helper);
+      unsubscribe = on(eventName, helper);
     }
     // возврат функции отписки
-    return () => {
-      if (bus[eventName as keyof EventTypes]?.includes(handler)) {
-        bus[eventName as keyof EventTypes] = bus[
-          eventName as keyof EventTypes
-        ]?.filter(
-          (savedHandler) => savedHandler !== handler
-        ) as Bus<EventTypes>[keyof EventTypes];
-      }
-    };
+    return unsubscribe;
   }
 
   function emit(eventName: keyof EventTypes, payload: any) {
@@ -147,13 +126,12 @@ export default function createEventBus<EventTypes>(): EventBus<EventTypes> {
 
   function clear(eventName?: keyof EventTypes | "*") {
     if (eventName) {
-      bus[eventName as keyof EventTypes] =
-        [] as unknown as Bus<EventTypes>[keyof EventTypes];
+      bus[eventName].splice(0);
       return;
     }
-    for (eventName as string in bus) {
+    for (eventName in bus) {
       if (eventName) {
-        bus[eventName] = [] as unknown as Bus<EventTypes>[keyof EventTypes];
+        bus[eventName].splice(0);
       }
     }
   }

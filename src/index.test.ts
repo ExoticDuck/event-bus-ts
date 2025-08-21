@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { createEventBus } from "./index";
+import createEventBus from "./index";
 
 type Events = {
   data: { foo: number };

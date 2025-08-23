@@ -58,10 +58,10 @@ export default function createEventBus<
     handler: WildCardEventHandler<K & string, EventTypes[K]>
   ): () => void;
   function on(eventName: keyof EventTypes | "*", handler: any): () => void {
+    let handlers = bus[eventName];
     if (eventName === "*") {
-      bus["*"].push(handler);
+      handlers.push(handler);
     } else {
-      const handlers = bus[eventName];
       if (!handlers) {
         bus[eventName] = [handler] as Bus<EventTypes>[keyof EventTypes];
       } else {
@@ -126,14 +126,22 @@ export default function createEventBus<
 
   function clear(eventName?: keyof EventTypes | "*") {
     if (eventName) {
-      bus[eventName].splice(0);
+      if (eventName === "*") {
+        bus["*"] = [];
+      } else {
+        bus[eventName] = [] as unknown as Bus<EventTypes>[keyof EventTypes];
+      }
       return;
     }
-    for (eventName in bus) {
-      if (eventName) {
-        bus[eventName].splice(0);
+
+    Object.keys(bus).forEach((key) => {
+      const eventKey = key as keyof EventTypes | "*";
+      if (eventKey === "*") {
+        bus["*"] = [];
+      } else {
+        bus[eventKey] = [] as unknown as Bus<EventTypes>[keyof EventTypes];
       }
-    }
+    });
   }
 
   const eventBus = {

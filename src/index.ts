@@ -98,19 +98,13 @@ export default function createEventBus<
         EventTypes[keyof EventTypes]
       > = (payload) => {
         handler(payload);
-        bus["*"] = bus["*"].filter((savedHandler) => savedHandler !== helper);
+        unsubscribe();
       };
       unsubscribe = on(eventName, helper);
     } else {
       const helper: EventHandler<EventTypes[keyof EventTypes]> = (payload) => {
         handler(payload);
-        const handlers = bus[eventName];
-        if (handlers) {
-          bus[eventName] = handlers.filter(
-            (savedHandler) => savedHandler !== helper
-          ) as Bus<EventTypes>[keyof EventTypes];
-          console.log(handlers);
-        }
+        unsubscribe();
       };
       unsubscribe = on(eventName, helper);
     }

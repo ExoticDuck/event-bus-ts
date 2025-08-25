@@ -90,21 +90,23 @@ export default function createEventBus<
     eventName: "*",
     handler: WildCardEventHandler<K & string, EventTypes[K]>
   ): () => void;
-  function once<K extends keyof EventTypes>(
-    eventName: K | "*",
-    handler: any
-  ): () => void {
+  function once(eventName: keyof EventTypes | "*", handler: any): () => void {
     let unsubscribe: () => void;
     if (eventName === "*") {
       const helper: WildCardEventHandler<K, EventTypes[K]> = (payload) => {
         handler(payload);
-        clear(eventName);
+        bus["*"] = bus["*"].filter((savedHandler) => savedHandler !== handler);
       };
       unsubscribe = on(eventName, helper);
     } else {
       const helper: EventHandler<EventTypes[K]> = (payload) => {
         handler(payload);
-        clear(eventName);
+        const handlers = bus[eventName];
+        if (handlers) {
+          bus[eventName] = handlers.filter(
+            (savedHandler) => savedHandler !== handler
+          ) as Bus<EventTypes>[keyof EventTypes];
+        }
       };
       unsubscribe = on(eventName, helper);
     }
